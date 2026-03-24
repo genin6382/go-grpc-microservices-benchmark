@@ -1,8 +1,10 @@
-package config 
+package config
 
 import (
-	"github.com/joho/godotenv"
+	"fmt"
 	"os"
+
+	"github.com/joho/godotenv"
 )
 
 
@@ -12,6 +14,8 @@ type Config struct {
 	DBUser     string
 	DBPassword string
 	DBName     string
+	DBURL      string
+	JWTSecretKey string
 }
 
 func LoadConfig() (*Config, error) {
@@ -25,5 +29,7 @@ func LoadConfig() (*Config, error) {
 		DBUser:     os.Getenv("DB_USER"),
 		DBPassword: os.Getenv("DB_PASSWORD"),
 		DBName:     os.Getenv("DB_NAME"),
+		DBURL:      fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", os.Getenv("DB_USER"), os.Getenv("DB_PASSWORD"), os.Getenv("DB_HOST"), os.Getenv("DB_PORT"), os.Getenv("DB_NAME")),
+		JWTSecretKey: os.Getenv("JWT_SECRET_KEY"),
 	}, nil
 }
