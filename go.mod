@@ -1,11 +1,14 @@
 module github.com/genin6382/go-grpc-microservices-benchmark
 
-go 1.24.0
+go 1.25.0
 
 require (
+	github.com/go-chi/chi/v5 v5.2.5 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang-migrate/migrate/v4 v4.19.1 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/lib/pq v1.11.2 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
-	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/crypto v0.49.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 )
