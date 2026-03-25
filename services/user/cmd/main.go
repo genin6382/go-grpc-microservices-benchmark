@@ -14,14 +14,15 @@ func main() {
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		log.Fatalf("ERROR: Failed to load config: %v", err)
 	}
 	// Connect to the database
 	dbConn, err := db.SetupDatabase(cfg,"internal/db/migrations")
 	if err != nil {
-        log.Fatalf("Could not setup database: %v", err)
+        log.Fatalf("ERROR: Could not setup database: %v", err)
     }
-	log.Info("Database migrations applied successfully")
+	defer dbConn.Close()
+	log.Info("INFO: Database migrations applied successfully")
 	
 	// Set up HTTP server and routes
 	router:= chi.NewRouter()
@@ -31,16 +32,16 @@ func main() {
 	userHandler := &user.UserHandler{DB: dbConn, Config: cfg}
 	
 	//Auth
-	router.Post("/login" , userHandler.HandleLogin)
-	router.Post("/register", userHandler.HandleCreateUser)
+	router.Post("/users/login" , userHandler.HandleLogin)
+	router.Post("/users/register", userHandler.HandleCreateUser)
 
 	//Protected routes
-	router.Route("/api", func(r chi.Router) {
+	router.Route("/users", func(r chi.Router) {
 		r.Use(userHandler.HandleVerifyToken)
 		//CRUD
-		r.Get("/users", userHandler.HandleListUsers)
-		r.Get("/users/{id}", userHandler.HandleGetUserByID)
-		r.Delete("/users/{id}", userHandler.HandleDeleteUser)
+		r.Get("/", userHandler.HandleListUsers)
+		r.Get("/{id}", userHandler.HandleGetUserByID)
+		r.Delete("/{id}", userHandler.HandleDeleteUser)
 	})
 
     log.Info("Server starting on :8080")
