@@ -4,6 +4,7 @@ import (
 	"github.com/genin6382/go-grpc-microservices-benchmark/internal/config"
 	"github.com/genin6382/go-grpc-microservices-benchmark/services/user"
 	"github.com/genin6382/go-grpc-microservices-benchmark/internal/db"
+	internalmiddleware "github.com/genin6382/go-grpc-microservices-benchmark/internal/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	log "github.com/sirupsen/logrus"
@@ -37,7 +38,7 @@ func main() {
 
 	//Protected routes
 	router.Route("/users", func(r chi.Router) {
-		r.Use(userHandler.HandleVerifyToken)
+		r.Use(internalmiddleware.VerifyToken(cfg))
 		//CRUD
 		r.Get("/", userHandler.HandleListUsers)
 		r.Get("/{id}", userHandler.HandleGetUserByID)

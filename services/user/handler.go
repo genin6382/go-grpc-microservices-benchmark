@@ -2,12 +2,10 @@
 package user
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
-	"strings"
-
+	internaljwt "github.com/genin6382/go-grpc-microservices-benchmark/internal/jwt"
 	"github.com/genin6382/go-grpc-microservices-benchmark/internal/config"
 	"github.com/go-chi/chi/v5"
 )
@@ -113,47 +111,20 @@ func (h *UserHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID, err := VerifyPassword(h.DB, r.Context(), req.Name, req.Password)
-	
 	if err != nil {
-        http.Error(w, "Invalid credentials", http.StatusUnauthorized)
-        return
-    }
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		return
+	}
 
-	tokenString , err := GenerateJWT(userID,[]byte(h.Config.JWTSecretKey))
-
+	tokenString, err := internaljwt.GenerateJWT(userID, []byte(h.Config.JWTSecretKey))
 	if err != nil {
-		http.Error(w,"Failed to generate token", http.StatusInternalServerError)
-		return 
+		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(http.StatusOK)
-    json.NewEncoder(w).Encode(map[string]string{
-        "token": tokenString,
-    })
-}
-
-func (h *UserHandler) HandleVerifyToken(next http.Handler) http.Handler	 {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tokenString := r.Header.Get("Authorization")
-		
-		if tokenString == "" {
-			http.Error(w, "Missing token", http.StatusBadRequest)
-			return
-		}
-
-		tokenString = strings.TrimPrefix(tokenString, "Bearer ")
-
-		claims , err := VerifyJWT(tokenString, []byte(h.Config.JWTSecretKey))
-		
-		if err != nil {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
-			return
-		}
-
-		// Add user ID to request context
-		ctx:= context.WithValue(r.Context(),"user_id",claims.UserID)
-		next.ServeHTTP(w, r.WithContext(ctx))
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"token": tokenString,
 	})
-		
 }
