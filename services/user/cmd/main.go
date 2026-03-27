@@ -45,6 +45,6 @@ func main() {
 		r.Delete("/{id}", userHandler.HandleDeleteUser)
 	})
 
-    log.Info("Server starting on :8080")
+    log.Info("INFO: User-Server starting on :8080")
     http.ListenAndServe(":8080", router)
 }
