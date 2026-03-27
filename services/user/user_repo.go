@@ -47,21 +47,12 @@ func CreateUser(db *sql.DB , ctx context.Context, name string, password string) 
 
 	encryptedPassword := string(bytes)
 	var user User
-	record, err:= db.QueryContext(ctx, "INSERT INTO users (name , password) VALUES ($1, $2) RETURNING id, name, created_at", name, encryptedPassword)
+	record := db.QueryRowContext(ctx, "INSERT INTO users (name , password) VALUES ($1, $2) RETURNING id, name, created_at", name, encryptedPassword)
 
-	if err != nil {
-		return nil, fmt.Errorf("CreateUser query: %w", err)
+	if err := record.Scan(&user.Id, &user.Name, &user.CreatedAt); err != nil {
+		return nil, fmt.Errorf("CreateUser scan: %w", err)
 	}
-	defer record.Close()
-	
-	if record.Next() {
-		err := record.Scan(&user.Id, &user.Name, &user.CreatedAt)
-		if err != nil {
-			return nil, fmt.Errorf("CreateUser scan: %w", err)
-		}
-		
-	}
-    return &user, nil
+	return &user, nil
 }
 
 func DeleteUser(db *sql.DB, ctx context.Context, id string) (*User, error) {
