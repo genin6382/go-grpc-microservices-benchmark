@@ -13,6 +13,8 @@ import (
 type OrderHandler struct {
 	DB     *sql.DB
 	Config *config.Config
+	UserClient *UserServiceClient
+	ProductClient *ProductServiceClient
 }
 
 func (h *OrderHandler) HandleListOrders(w http.ResponseWriter, r *http.Request) {
@@ -114,7 +116,47 @@ func (h *OrderHandler) HandleCreateOrder(w http.ResponseWriter, r *http.Request)
         return
     }
 
-    order, err := CreateOrder(h.DB, r.Context(), userID, req.ProductID, req.Quantity)
+    // Check if the user exists
+    userExists, err := h.UserClient.CheckUserExists(r.Context(), userID)
+    if err != nil {
+        log.Errorf("Error checking user exists: %v", err)
+        http.Error(w, "Failed to check user", http.StatusInternalServerError)
+        return
+    }
+    if !userExists {
+        http.Error(w, "User not found", http.StatusNotFound)
+        return
+    }
+
+	// Check if the product exists and get its price
+	productInfo, err := h.ProductClient.GetProductInfo(r.Context(), req.ProductID)
+	if err != nil {
+		log.Errorf("Error fetching product info: %v", err)
+		http.Error(w, "Failed to fetch product info", http.StatusInternalServerError)
+		return
+	}
+	if productInfo == nil {
+		http.Error(w, "Product not found", http.StatusNotFound)
+		return
+	}
+
+	if int(productInfo.Stock) < req.Quantity {
+		http.Error(w, "Insufficient stock", http.StatusBadRequest)
+		return
+	}
+
+	totalCost := float64(req.Quantity) * float64(productInfo.Price)
+
+	// Update product stock
+	success , err := h.ProductClient.UpdateStock(r.Context(),req.ProductID,int32(req.Quantity))
+
+	if err != nil || !success {
+		log.Errorf("Error updating stock: %v", err)
+		http.Error(w, "Failed to update stock", http.StatusInternalServerError)
+		return
+	}
+	
+    order, err := CreateOrder(h.DB, r.Context(), userID, req.ProductID, req.Quantity, totalCost)
     if err != nil {
         log.Errorf("ERROR: Order Error: %v\n", err) 
         http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -62,46 +62,10 @@ func ListOrdersByUserID(db *sql.DB, ctx context.Context, userID string) ([]Order
 }
 
 
-func CreateOrder(db *sql.DB, ctx context.Context, userID string, productID string, quantity int) (*Order, error) {
-	//Start Transaction
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-
-	//Fetch Product Details
-	var price float64
-	var currentStock int
-	err = tx.QueryRowContext(ctx, 
-		"SELECT price, stock FROM products WHERE id = $1", productID,
-	).Scan(&price, &currentStock)
-
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("product not found")
-		}
-		return nil, fmt.Errorf("failed to fetch product: %w", err)
-	}
-
-	if currentStock < quantity {
-		return nil, fmt.Errorf("insufficient stock: have %d, want %d", currentStock, quantity)
-	}
-
-	totalCost := float64(quantity) * price
-
-	//Update Stock
-	_, err = tx.ExecContext(ctx,
-		"UPDATE products SET stock = stock - $1 WHERE id = $2",
-		quantity, productID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to update stock: %w", err)
-	}
-
+func CreateOrder(db *sql.DB, ctx context.Context, userID string, productID string, quantity int, totalCost float64) (*Order, error) {
 	//Place Order
 	var ord Order
-	err = tx.QueryRowContext(ctx,
+	err := db.QueryRowContext(ctx,
 		`INSERT INTO orders (user_id, product_id, quantity, total_cost, status)
 		 VALUES ($1, $2, $3, $4, 'confirmed')
 		 RETURNING id, user_id, product_id, quantity, total_cost, status, created_at`,
@@ -111,11 +75,6 @@ func CreateOrder(db *sql.DB, ctx context.Context, userID string, productID strin
 	if err != nil {
 		return nil, fmt.Errorf("failed to create order: %w", err)
 	}
-	
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-
 	return &ord, nil
 }
 

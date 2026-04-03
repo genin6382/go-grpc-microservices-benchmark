@@ -1,0 +1,17 @@
+syntax="proto3";
+
+package user;
+
+option go_package = "pb/user;user";
+
+message UserRequest{
+    string user_id = 1;
+}
+
+message UserResponse{
+    bool exists = 1;
+}
+
+service UserService{
+    rpc CheckUserExists(UserRequest) returns (UserResponse);
+}

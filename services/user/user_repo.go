@@ -80,3 +80,14 @@ func VerifyPassword(db *sql.DB, ctx context.Context, name string, password strin
 	return userID, nil
 
 }
+
+func UserExistsByID(db *sql.DB, ctx context.Context, userID string) (bool, error) {
+    var exists bool
+    err := db.QueryRowContext(ctx,
+        "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)", userID,
+    ).Scan(&exists)
+    if err != nil {
+        return false, fmt.Errorf("failed to check user existence: %w", err)
+    }
+    return exists, nil
+}

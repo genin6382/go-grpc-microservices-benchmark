@@ -2,6 +2,10 @@ package main
 
 import (
 	"net/http"
+	"net"
+	"google.golang.org/grpc"
+
+	pb "github.com/genin6382/go-grpc-microservices-benchmark/pb/product"
 
 	"github.com/genin6382/go-grpc-microservices-benchmark/internal/config"
 	"github.com/genin6382/go-grpc-microservices-benchmark/internal/db"
@@ -26,6 +30,21 @@ func main (){
 	}
 	defer dbConn.Close()
 	log.Info("INFO: Successfully Setup Database!")
+
+
+	//Setup gRPC server
+	go func(){
+		lis , err := net.Listen("tcp", ":50052")
+		if err != nil {
+			log.Fatalf("ERROR: Failed to Listen on port 50052: %v",err)
+		}
+		grpcServer := grpc.NewServer()
+		pb.RegisterProductServiceServer(grpcServer, &product.Server{DB: dbConn})
+		log.Info("INFO: gRPC Server running on :50052")
+		if err := grpcServer.Serve(lis); err != nil {
+			log.Fatalf("ERROR: Failed to Serve gRPC Server: %v",err)
+		}
+	}()	
 
 	//Setup Chi router
 	router := chi.NewRouter()
