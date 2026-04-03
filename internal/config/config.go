@@ -16,6 +16,8 @@ type Config struct {
 	DBName     string
 	DBURL      string
 	JWTSecretKey string
+	UserServiceAddr string
+	ProductServiceAddr string
 }
 
 func LoadConfig() (*Config, error) {
@@ -31,5 +33,7 @@ func LoadConfig() (*Config, error) {
 		DBName:     os.Getenv("DB_NAME"),
 		DBURL:      fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", os.Getenv("DB_USER"), os.Getenv("DB_PASSWORD"), os.Getenv("DB_HOST"), os.Getenv("DB_PORT"), os.Getenv("DB_NAME")),
 		JWTSecretKey: os.Getenv("JWT_SECRET_KEY"),
+		UserServiceAddr: os.Getenv("USER_SERVICE_ADDR"),
+		ProductServiceAddr: os.Getenv("PRODUCT_SERVICE_ADDR"),
 	}, nil
 }

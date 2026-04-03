@@ -9,6 +9,9 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	log "github.com/sirupsen/logrus"
 	"net/http"
+	"net"
+	"google.golang.org/grpc"
+	pb "github.com/genin6382/go-grpc-microservices-benchmark/pb/user"
 )
 
 func main() {
@@ -24,6 +27,21 @@ func main() {
     }
 	defer dbConn.Close()
 	log.Info("INFO: Database migrations applied successfully")
+
+	// gRPC server setup 
+
+	go func() {
+        lis, err := net.Listen("tcp", ":50051")
+        if err != nil {
+            log.Fatalf("gRPC failed to listen: %v", err)
+        }
+        grpcServer := grpc.NewServer()
+        pb.RegisterUserServiceServer(grpcServer, &user.Server{DB: dbConn})
+        log.Info("gRPC server running on :50051")
+        if err := grpcServer.Serve(lis); err != nil {
+            log.Fatalf("gRPC failed to serve: %v", err)
+        }
+    }()
 	
 	// Set up HTTP server and routes
 	router:= chi.NewRouter()
