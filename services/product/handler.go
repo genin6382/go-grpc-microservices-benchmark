@@ -2,17 +2,22 @@
 package product
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/genin6382/go-grpc-microservices-benchmark/internal/config"
 	"github.com/go-chi/chi/v5"
+	"github.com/redis/go-redis/v9"
+	log "github.com/sirupsen/logrus"
 )
 
 type ProductHandler struct {
 	DB *sql.DB
 	Config *config.Config
+	CacheClient *redis.Client
 }
 
 func (h *ProductHandler) HandleListProducts(w http.ResponseWriter, r *http.Request){
@@ -39,6 +44,16 @@ func (h * ProductHandler) HandleGetProductByID(w http.ResponseWriter, r *http.Re
 		http.Error(w, "Invalid product ID", http.StatusBadRequest)
 		return
 	}
+	cacheKey := "product:" + id
+	// Check cache first
+	val , err := h.CacheClient.Get(context.Background(), cacheKey).Result()
+	if err == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(val))
+		return
+	}
+	//Cache miss , query DB
 	product, err := ListProductByID(h.DB, r.Context(), id)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -48,9 +63,23 @@ func (h * ProductHandler) HandleGetProductByID(w http.ResponseWriter, r *http.Re
 		}
 		return
 	}
+	// Encode product to JSON 
+	productJSON, err := json.Marshal(product)
+	if err != nil {
+		http.Error(w, "Failed to encode product data", http.StatusInternalServerError)
+	}
+
+	go func() {
+		// Set cache 
+		err := h.CacheClient.Set(context.Background(), cacheKey, productJSON, 5*time.Minute).Err()
+		if err != nil {
+			log.Errorf("Failed to set cache for key %s: %v", cacheKey, err)
+		}
+	}()
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(product)
+	w.Write(productJSON)
 }
 
 func (h *ProductHandler) HandleCreateProduct(w http.ResponseWriter, r *http.Request){
@@ -108,6 +137,16 @@ func (h *ProductHandler) HandleUpdateProductDetails(w http.ResponseWriter, r *ht
 		}
 		return
 	}
+	// Invalidate cache asynchronously
+	go func (){
+		// Invalidate cache
+		cacheKey := "product:" + id
+		err := h.CacheClient.Del(context.Background(), cacheKey).Err()
+		if err != nil {
+			log.Errorf("Failed to invalidate cache for key %s: %v", cacheKey, err)
+		}
+	}()
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(updatedProduct)
@@ -131,6 +170,7 @@ func (h *ProductHandler) HandleUpdateProductStock(w http.ResponseWriter, r *http
 		http.Error(w, "Delta value is required", http.StatusBadRequest)
 		return
 	}
+
 	updatedProduct, err := UpdateProductStock(h.DB, r.Context(), id, *req.Delta)
 	if err != nil {
 		if err.Error() == "Insufficient stock or Product not found" {
@@ -140,6 +180,15 @@ func (h *ProductHandler) HandleUpdateProductStock(w http.ResponseWriter, r *http
 		}
 		return
 	}
+	// Invalidate cache asynchronously
+	go func (){
+		// Invalidate cache
+		cacheKey := "product:" + id
+		err := h.CacheClient.Del(context.Background(), cacheKey).Err()
+		if err != nil {
+			log.Errorf("Failed to invalidate cache for key %s: %v", cacheKey, err)
+		}
+	}()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(updatedProduct)
@@ -153,7 +202,7 @@ func (h *ProductHandler) HandleDeleteProduct(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "Invalid product ID", http.StatusBadRequest)
 		return
 	}
-	
+
 	product,err := DeleteProduct(h.DB, r.Context(), id)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -163,6 +212,17 @@ func (h *ProductHandler) HandleDeleteProduct(w http.ResponseWriter, r *http.Requ
 		}
 		return
 	}
+
+	// Invalidate cache asynchronously
+	go func (){
+		// Invalidate cache
+		cacheKey := "product:" + id
+		err := h.CacheClient.Del(context.Background(), cacheKey).Err()
+		if err != nil {
+			log.Errorf("Failed to invalidate cache for key %s: %v", cacheKey, err)
+		}
+	}()
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(product)

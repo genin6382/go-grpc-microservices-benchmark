@@ -11,6 +11,7 @@ import (
 	"github.com/genin6382/go-grpc-microservices-benchmark/internal/db"
 	"github.com/genin6382/go-grpc-microservices-benchmark/services/product"
 	internalmiddleware "github.com/genin6382/go-grpc-microservices-benchmark/internal/middleware"
+	"github.com/genin6382/go-grpc-microservices-benchmark/internal/cache"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -46,12 +47,21 @@ func main (){
 		}
 	}()	
 
+	// Setup Redis Cache
+	redisClient := cache.SetupRedisCache(cfg.RedisAddr)
+
+	if redisClient == nil {
+		log.Warn("WARN: Redis cache is not available. Proceeding without cache.")
+	} else {
+		log.Info("INFO: Redis cache is set up and ready to use.")
+	}
+
 	//Setup Chi router
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
 
-	productHandler := &product.ProductHandler{DB:dbConn, Config:cfg}
+	productHandler := &product.ProductHandler{DB:dbConn, Config:cfg, CacheClient: redisClient}
 	//Protected Routes
 	router.Route("/products",func(r chi.Router){
 		r.Use(internalmiddleware.VerifyToken(cfg))
