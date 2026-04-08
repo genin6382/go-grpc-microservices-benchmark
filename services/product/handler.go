@@ -1,4 +1,4 @@
-// Handles the product service requests
+		// Handles the product service requests
 package product
 
 import (
@@ -58,6 +58,8 @@ func (h * ProductHandler) HandleGetProductByID(w http.ResponseWriter, r *http.Re
 	if err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, "Product not found", http.StatusNotFound)
+			// Caching NULL value , so that subsequent requests for the same non-existent product can be served from cache, reducing DB load
+			h.CacheClient.Set(context.Background(), cacheKey, "null", 5*time.Minute) 
 		} else {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
