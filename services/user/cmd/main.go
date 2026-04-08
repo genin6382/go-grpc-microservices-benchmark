@@ -12,6 +12,7 @@ import (
 	"net"
 	"google.golang.org/grpc"
 	pb "github.com/genin6382/go-grpc-microservices-benchmark/pb/user"
+	"github.com/genin6382/go-grpc-microservices-benchmark/internal/cache"
 )
 
 func main() {
@@ -36,19 +37,28 @@ func main() {
             log.Fatalf("gRPC failed to listen: %v", err)
         }
         grpcServer := grpc.NewServer()
-        pb.RegisterUserServiceServer(grpcServer, &user.Server{DB: dbConn})
+        pb.RegisterUserServiceServer(grpcServer, &user.Server{DB: dbConn}) 
         log.Info("gRPC server running on :50051")
         if err := grpcServer.Serve(lis); err != nil {
             log.Fatalf("gRPC failed to serve: %v", err)
         }
     }()
-	
+
+	// Set up Redis cache
+	cacheClient := cache.SetupRedisCache(cfg.RedisAddr)
+
+	if cacheClient == nil {
+		log.Warn("WARNING: Redis cache not available, proceeding without caching")
+	} else {
+		log.Info("INFO: Redis cache connected successfully")
+	}
+
 	// Set up HTTP server and routes
 	router:= chi.NewRouter()
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
 
-	userHandler := &user.UserHandler{DB: dbConn, Config: cfg}
+	userHandler := &user.UserHandler{DB: dbConn, Config: cfg, CacheClient: cacheClient}
 	
 	//Auth
 	router.Post("/users/login" , userHandler.HandleLogin)

@@ -18,6 +18,7 @@ type Config struct {
 	JWTSecretKey string
 	UserServiceAddr string
 	ProductServiceAddr string
+	RedisAddr string
 }
 
 func LoadConfig() (*Config, error) {
@@ -35,5 +36,6 @@ func LoadConfig() (*Config, error) {
 		JWTSecretKey: os.Getenv("JWT_SECRET_KEY"),
 		UserServiceAddr: os.Getenv("USER_SERVICE_ADDR"),
 		ProductServiceAddr: os.Getenv("PRODUCT_SERVICE_ADDR"),
+		RedisAddr: os.Getenv("REDIS_ADDR"),
 	}, nil
 }

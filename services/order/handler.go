@@ -1,12 +1,15 @@
 package order
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/genin6382/go-grpc-microservices-benchmark/internal/config"
 	"github.com/go-chi/chi/v5"
+	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -15,6 +18,7 @@ type OrderHandler struct {
 	Config *config.Config
 	UserClient *UserServiceClient
 	ProductClient *ProductServiceClient
+	CacheClient *redis.Client
 }
 
 func (h *OrderHandler) HandleListOrders(w http.ResponseWriter, r *http.Request) {
@@ -36,16 +40,39 @@ func (h *OrderHandler) HandleListOrders(w http.ResponseWriter, r *http.Request) 
 
 func (h *OrderHandler) HandleGetOrderByID(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+
+	cacheKey := "order:" + id
+	// Get from cache
+	val , err := h.CacheClient.Get(context.Background(), cacheKey).Result()
+	if err == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(val))
+		return
+	}
+	//If cache miss, fetch from DB
 	order, err := ListOrderByID(h.DB, r.Context(), id)
 	if err != nil {
 		http.Error(w, "Order not found", http.StatusNotFound)
 		return
 	}
-
-
+	//Encode order to JSON 
+	orderJSON, err := json.Marshal(order)
+	if err != nil {
+		log.Errorf("Failed to marshal order: %v", err)
+		http.Error(w, "Failed to process order data", http.StatusInternalServerError)
+		return
+	}
+	// Set cache as seperate goroutine to avoid blocking response
+	go func() {
+		err := h.CacheClient.Set(context.Background(), cacheKey, orderJSON, 6*time.Hour).Err()
+		if err != nil {
+			log.Errorf("Failed to set cache for order %s: %v", id, err)
+		}
+	}()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(order)
+	w.Write(orderJSON)
 }
 
 func (h *OrderHandler) HandleGetOrdersByUserID(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +82,8 @@ func (h *OrderHandler) HandleGetOrdersByUserID(w http.ResponseWriter, r *http.Re
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+	// Check cache first
+	
 
 	orders, err := ListOrdersByUserID(h.DB, r.Context(), userID)
 	if err != nil {
@@ -176,6 +205,14 @@ func (h *OrderHandler) HandleDeleteOrder(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Order not found", http.StatusNotFound)
 		return
 	}
+	//Invalidate cache asynchronously
+	go func() {
+		cacheKey := "order:" + id
+		err := h.CacheClient.Del(context.Background(), cacheKey).Err()
+		if err != nil {
+			log.Errorf("Failed to invalidate cache for key %s: %v", cacheKey, err)
+		}
+	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(order)
