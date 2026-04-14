@@ -72,7 +72,7 @@ func main() {
 
 	//Protected routes
 	router.Route("/users", func(r chi.Router) {
-		r.Use(internalmiddleware.VerifyToken(cfg))
+		r.Use(internalmiddleware.RequireGatewayIdentity)
 		//CRUD
 		r.Get("/", userHandler.HandleListUsers)
 		r.Get("/{id}", userHandler.HandleGetUserByID)

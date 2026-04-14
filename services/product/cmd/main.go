@@ -70,7 +70,7 @@ func main (){
 	productHandler := &product.ProductHandler{DB:dbConn, Config:cfg, CacheClient: redisClient}
 	//Protected Routes
 	router.Route("/products",func(r chi.Router){
-		r.Use(internalmiddleware.VerifyToken(cfg))
+		r.Use(internalmiddleware.RequireGatewayIdentity)
 		//GET
 		r.Get("/",productHandler.HandleListProducts)
 		r.Get("/{id}",productHandler.HandleGetProductByID)

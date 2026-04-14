@@ -9,8 +9,8 @@ import (
 
     "github.com/genin6382/go-grpc-microservices-benchmark/internal/config"
     "github.com/genin6382/go-grpc-microservices-benchmark/internal/db"
-    internalmiddleware "github.com/genin6382/go-grpc-microservices-benchmark/internal/middleware"
     "github.com/genin6382/go-grpc-microservices-benchmark/internal/etcd" 
+    internalmiddleware "github.com/genin6382/go-grpc-microservices-benchmark/internal/middleware"
     productpb "github.com/genin6382/go-grpc-microservices-benchmark/pb/product"
     userpb "github.com/genin6382/go-grpc-microservices-benchmark/pb/user"
     "github.com/genin6382/go-grpc-microservices-benchmark/services/order"
@@ -83,7 +83,7 @@ func main() {
     })
 
     router.Route("/orders", func(r chi.Router) {
-        r.Use(internalmiddleware.VerifyToken(cfg))
+        r.Use(internalmiddleware.RequireGatewayIdentity)
         r.Get("/", orderHandler.HandleListOrders)
         r.Get("/{id}", orderHandler.HandleGetOrderByID)
         r.Get("/user/{user_id}", orderHandler.HandleGetOrdersByUserID)
