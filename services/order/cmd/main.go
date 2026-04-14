@@ -3,7 +3,6 @@ package main
 import (
     "context"
     "net/http"
-    "os"
     "os/signal"
     "syscall"
     "time"
@@ -11,9 +10,11 @@ import (
     "github.com/genin6382/go-grpc-microservices-benchmark/internal/config"
     "github.com/genin6382/go-grpc-microservices-benchmark/internal/db"
     internalmiddleware "github.com/genin6382/go-grpc-microservices-benchmark/internal/middleware"
-    "github.com/genin6382/go-grpc-microservices-benchmark/services/order"
+    "github.com/genin6382/go-grpc-microservices-benchmark/internal/etcd" 
     productpb "github.com/genin6382/go-grpc-microservices-benchmark/pb/product"
-    userpb    "github.com/genin6382/go-grpc-microservices-benchmark/pb/user"
+    userpb "github.com/genin6382/go-grpc-microservices-benchmark/pb/user"
+    "github.com/genin6382/go-grpc-microservices-benchmark/services/order"
+    "github.com/genin6382/go-grpc-microservices-benchmark/internal/cache"
 
     "github.com/go-chi/chi/v5"
     "github.com/go-chi/chi/v5/middleware"
@@ -35,7 +36,7 @@ func main() {
     defer dbConn.Close()
     log.Info("INFO: Database setup successful")
 
-    // gRPC client — User Service
+    // gRPC clients
     userConn, err := grpc.NewClient(cfg.UserServiceAddr,
         grpc.WithTransportCredentials(insecure.NewCredentials()),
     )
@@ -44,7 +45,6 @@ func main() {
     }
     defer userConn.Close()
 
-    // gRPC client — Product Service
     productConn, err := grpc.NewClient(cfg.ProductServiceAddr,
         grpc.WithTransportCredentials(insecure.NewCredentials()),
     )
@@ -53,15 +53,23 @@ func main() {
     }
     defer productConn.Close()
 
-    // Wire dependencies
     userGrpcClient    := order.NewUserServiceClient(userpb.NewUserServiceClient(userConn))
     productGrpcClient := order.NewProductServiceClient(productpb.NewProductServiceClient(productConn))
+
+    //setup redis cache
+    cacheClient := cache.SetupRedisCache(cfg.RedisAddr)
+    if cacheClient == nil {
+        log.Warn("WARNING: Redis cache not available, proceeding without caching")
+    } else {
+        log.Info("INFO: Redis cache connected successfully")
+    }
 
     orderHandler := &order.OrderHandler{
         DB:            dbConn,
         Config:        cfg,
         UserClient:    userGrpcClient,
         ProductClient: productGrpcClient,
+        CacheClient:   cacheClient,
     }
 
     // Router
@@ -84,22 +92,36 @@ func main() {
         r.Delete("/{id}", orderHandler.HandleDeleteOrder)
     })
 
-    // Graceful shutdown
-    srv := &http.Server{Addr: ":8082", Handler: router}
-    quit := make(chan os.Signal, 1)
-    signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+    // etcd registration
+    etcdClient, err := etcd.NewServiceRegistry([]string{cfg.EtcdAddr})
+    if err != nil {
+        log.Fatalf("ERROR: Failed to connect to etcd: %v", err)
+    }
 
+    // Graceful shutdown context — declare BEFORE using ctx anywhere
+    ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+    defer stop()
+
+    // Start HTTP server to constantly 
+    srv := &http.Server{Addr: ":8082", Handler: router}
     go func() {
-        log.Info("INFO: Order-Server starting on :8082")
+        log.Info("INFO: Order service starting on :8082")
         if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
             log.Fatalf("Server error: %v", err)
         }
     }()
 
-    <-quit
-    log.Info("Shutting down gracefully...")
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
-    srv.Shutdown(ctx)
-    log.Info("Server stopped")
+    // Register in etcd — blocks here until SIGTERM
+    // Lease expires automatically on ctx cancel = automatic deregistration
+    if err := etcdClient.Register(ctx, "order", cfg.OrderServiceHostAddr, 10); err != nil {
+    log.Fatalf("ERROR: etcd registration error: %v", err)
+	}
+
+	<-ctx.Done()
+
+	log.Info("Shutting down gracefully...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = srv.Shutdown(shutdownCtx)
+	log.Info("Server stopped")
 }

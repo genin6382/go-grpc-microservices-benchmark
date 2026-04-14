@@ -5,6 +5,12 @@ import (
 	"github.com/genin6382/go-grpc-microservices-benchmark/services/user"
 	"github.com/genin6382/go-grpc-microservices-benchmark/internal/db"
 	internalmiddleware "github.com/genin6382/go-grpc-microservices-benchmark/internal/middleware"
+	"github.com/genin6382/go-grpc-microservices-benchmark/internal/etcd"
+
+	"time"
+	"os/signal"
+	"context"
+	"syscall"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	log "github.com/sirupsen/logrus"
@@ -74,5 +80,35 @@ func main() {
 	})
 
     log.Info("INFO: User-Server starting on :8080")
-    http.ListenAndServe(":8080", router)
+    // etcd registration
+    etcdClient, err := etcd.NewServiceRegistry([]string{cfg.EtcdAddr})
+    if err != nil {
+        log.Fatalf("ERROR: Failed to connect to etcd: %v", err)
+    }
+
+    // Graceful shutdown context — declare BEFORE using ctx anywhere
+    ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+    defer stop()
+
+    // Start HTTP server to constantly 
+    srv := &http.Server{Addr: ":8080", Handler: router}
+    go func() {
+        if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+            log.Fatalf("Server error: %v", err)
+        }
+    }()
+
+    // Register in etcd — blocks here until SIGTERM
+    // Lease expires automatically on ctx cancel = automatic deregistration
+    if err := etcdClient.Register(ctx, "user", cfg.UserServiceHostAddr, 10); err != nil {
+    log.Fatalf("ERROR: etcd registration error: %v", err)
+	}
+
+	<-ctx.Done()
+
+	log.Info("Shutting down gracefully...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = srv.Shutdown(shutdownCtx)
+	log.Info("Server stopped")
 }

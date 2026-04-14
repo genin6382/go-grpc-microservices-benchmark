@@ -57,6 +57,7 @@ func (s *ServiceRegistry) Register(ctx context.Context, serviceName, serviceAddr
 			}
 		}
 	}()
+	log.Infof("Registered service %s at %s with TTL %d", serviceName, serviceAddr, ttl)
 
 	return nil
 }
