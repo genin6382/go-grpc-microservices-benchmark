@@ -61,3 +61,11 @@ func (s *ServiceRegistry) Register(ctx context.Context, serviceName, serviceAddr
 
 	return nil
 }
+
+func (s *ServiceRegistry) Client() *clientv3.Client {
+	return s.client
+}
+
+func (s *ServiceRegistry) Close() error {
+	return s.client.Close()
+}

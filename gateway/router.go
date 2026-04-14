@@ -5,6 +5,7 @@ import (
 	"net/url"
 	log "github.com/sirupsen/logrus"
 	internalmiddleware "github.com/genin6382/go-grpc-microservices-benchmark/internal/middleware"
+	"github.com/genin6382/go-grpc-microservices-benchmark/gateway/loadbalancer"
 	"net/http"
 )
 
@@ -45,5 +46,18 @@ func NewReverseProxy(target string) *httputil.ReverseProxy {
 			return nil
 		},
 	}
+}
+
+func ProxyHandler(lb loadbalancer.LoadBalancer, service string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		target, err := lb.NextBackend(service, r)
+		if err != nil {
+			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+			return
+		}
+
+		proxy := NewReverseProxy(target)
+		proxy.ServeHTTP(w, r)
+	})
 }
 

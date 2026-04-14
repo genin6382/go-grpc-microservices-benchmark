@@ -1,26 +1,64 @@
 package main
 
 import (
+	"context"
+	"flag"
 	"net/http"
+	"os/signal"
+	"syscall"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/genin6382/go-grpc-microservices-benchmark/gateway"
+	"github.com/genin6382/go-grpc-microservices-benchmark/gateway/loadbalancer"
 	"github.com/genin6382/go-grpc-microservices-benchmark/internal/config"
+	gatewayetcd "github.com/genin6382/go-grpc-microservices-benchmark/internal/etcd"
 	internalmiddleware "github.com/genin6382/go-grpc-microservices-benchmark/internal/middleware"
 )
 
-type ctxKey string
-
-const userIDKey ctxKey = "user_id"
-
 func main() {
+	lbStrategy := flag.String("lb", "round_robin", "Load balancing strategy: round_robin | least_conn | consistent_hash")
+	flag.Parse()
+
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
+
+	var lb loadbalancer.LoadBalancer
+	switch *lbStrategy {
+	case "round_robin":
+		lb = loadbalancer.NewRoundRobin()
+	default:
+		log.Fatalf("Invalid load balancing strategy: %s", *lbStrategy)
+	}
+
+	registry, err := gatewayetcd.NewServiceRegistry([]string{cfg.EtcdAddr})
+	if err != nil {
+		log.Fatalf("ERROR: Failed to connect to etcd: %v", err)
+	}
+	defer registry.Close()
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		if err := gatewayetcd.WatchService(ctx, registry.Client(), "user", lb); err != nil {
+			log.Printf("watch user failed: %v", err)
+		}
+	}()
+	go func() {
+		if err := gatewayetcd.WatchService(ctx, registry.Client(), "product", lb); err != nil {
+			log.Printf("watch product failed: %v", err)
+		}
+	}()
+	go func() {
+		if err := gatewayetcd.WatchService(ctx, registry.Client(), "order", lb); err != nil {
+			log.Printf("watch order failed: %v", err)
+		}
+	}()
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
@@ -31,21 +69,17 @@ func main() {
 		_, _ = w.Write([]byte("gateway ok"))
 	})
 
-	userProxy := gateway.NewReverseProxy("http://localhost:8080")
-	productProxy := gateway.NewReverseProxy("http://localhost:8081")
-	orderProxy := gateway.NewReverseProxy("http://localhost:8082")
-
-	r.Handle("/users/login", userProxy)
-	r.Handle("/users/register", userProxy)
+	r.Handle("/users/login", gateway.ProxyHandler(lb, "user"))
+	r.Handle("/users/register", gateway.ProxyHandler(lb, "user"))
 
 	r.Group(func(r chi.Router) {
 		r.Use(internalmiddleware.VerifyToken(cfg))
 
-		r.Handle("/users/*", gateway.WithIdentity(userProxy))
-        r.Handle("/products/*", gateway.WithIdentity(productProxy))
-        r.Handle("/orders/*", gateway.WithIdentity(orderProxy))
+		r.Handle("/users/*", gateway.WithIdentity(gateway.ProxyHandler(lb, "user")))
+		r.Handle("/products/*", gateway.WithIdentity(gateway.ProxyHandler(lb, "product")))
+		r.Handle("/orders/*", gateway.WithIdentity(gateway.ProxyHandler(lb, "order")))
 	})
 
-	log.Println("Gateway running on :8000")
+	log.Printf("Gateway running on :8000 with load balancer: %s", *lbStrategy)
 	log.Fatal(http.ListenAndServe(":8000", r))
 }

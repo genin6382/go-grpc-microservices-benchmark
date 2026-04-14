@@ -1,59 +1,74 @@
 package etcd
 
-// import (
-// 	"context"
-// 	"strings"
+import (
+	"context"
+	"fmt"
+	"strings"
 
-// 	"github.com/genin6382/go-grpc-microservices-benchmark/gateway/loadbalancer"
-// 	clientv3 "go.etcd.io/etcd/client/v3"
-// 	log "github.com/sirupsen/logrus"
-// )
+	clientv3 "go.etcd.io/etcd/client/v3"
+	log "github.com/sirupsen/logrus"
 
-// func WatchService(ctx context.Context, client *clientv3.Client, serviceName string, lb loadbalancer.LoadBalancer) error {
-// 	prefix := "/services/" + serviceName + "/"
+	"github.com/genin6382/go-grpc-microservices-benchmark/gateway/loadbalancer"
+)
 
-// 	resp, err := client.Get(ctx, prefix, clientv3.WithPrefix())
-// 	if err != nil {
-// 		return err
-// 	}
+func WatchService(ctx context.Context, client *clientv3.Client, serviceName string, lb loadbalancer.LoadBalancer) error {
+	prefix := fmt.Sprintf("/services/%s/", serviceName)
 
-// 	for _, kv := range resp.Kvs {
-// 		lb.Add(string(kv.Value))
-// 		log.Infof("Discovered existing %s endpoint: %s", serviceName, string(kv.Value))
-// 	}
+	resp, err := client.Get(ctx, prefix, clientv3.WithPrefix())
+	if err != nil {
+		return err
+	}
 
-// 	wch := client.Watch(ctx, prefix, clientv3.WithPrefix())
+	backends := make([]string, 0, len(resp.Kvs))
+	for _, kv := range resp.Kvs {
+		addr := string(kv.Value)
+		backends = append(backends, addr)
+		log.Infof("Discovered existing %s endpoint: %s", serviceName, addr)
+	}
+	lb.UpdateBackends(serviceName, backends)
 
-// 	go func() {
-// 		for {
-// 			select {
-// 			case wr, ok := <-wch:
-// 				if !ok {
-// 					log.Warnf("watch closed for %s", serviceName)
-// 					return
-// 				}
+	wch := client.Watch(ctx, prefix, clientv3.WithPrefix())
 
-// 				for _, ev := range wr.Events {
-// 					switch ev.Type {
-// 					case clientv3.EventTypePut:
-// 						addr := string(ev.Kv.Value)
-// 						lb.Add(addr)
-// 						log.Infof("Added %s endpoint: %s", serviceName, addr)
+	go func() {
+		for {
+			select {
+			case wr, ok := <-wch:
+				if !ok {
+					log.Warnf("watch closed for %s", serviceName)
+					return
+				}
 
-// 					case clientv3.EventTypeDelete:
-// 						parts := strings.Split(string(ev.Kv.Key), "/")
-// 						addr := parts[len(parts)-1]
-// 						lb.Remove(addr)
-// 						log.Infof("Removed %s endpoint: %s", serviceName, addr)
-// 					}
-// 				}
+				current, err := client.Get(ctx, prefix, clientv3.WithPrefix())
+				if err != nil {
+					log.Errorf("failed to refresh backends for %s: %v", serviceName, err)
+					continue
+				}
 
-// 			case <-ctx.Done():
-// 				log.Infof("stopping watcher for %s", serviceName)
-// 				return
-// 			}
-// 		}
-// 	}()
+				updated := make([]string, 0, len(current.Kvs))
+				seen := make(map[string]struct{})
 
-// 	return nil
-// }
+				for _, kv := range current.Kvs {
+					addr := strings.TrimSpace(string(kv.Value))
+					if addr == "" {
+						continue
+					}
+					if _, ok := seen[addr]; ok {
+						continue
+					}
+					seen[addr] = struct{}{}
+					updated = append(updated, addr)
+				}
+
+				lb.UpdateBackends(serviceName, updated)
+				log.Infof("Updated %s backends: %v", serviceName, updated)
+
+				_ = wr
+			case <-ctx.Done():
+				log.Infof("stopping watcher for %s", serviceName)
+				return
+			}
+		}
+	}()
+
+	return nil
+}
