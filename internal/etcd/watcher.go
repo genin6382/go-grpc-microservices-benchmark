@@ -11,6 +11,17 @@ import (
 	"github.com/genin6382/go-grpc-microservices-benchmark/gateway/loadbalancer"
 )
 
+func normalizeAddr(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return ""
+	}
+	if strings.HasPrefix(addr, "http://") || strings.HasPrefix(addr, "https://") {
+		return addr
+	}
+	return "http://" + addr
+}
+
 func WatchService(ctx context.Context, client *clientv3.Client, serviceName string, lb loadbalancer.LoadBalancer) error {
 	prefix := fmt.Sprintf("/services/%s/", serviceName)
 
@@ -21,7 +32,10 @@ func WatchService(ctx context.Context, client *clientv3.Client, serviceName stri
 
 	backends := make([]string, 0, len(resp.Kvs))
 	for _, kv := range resp.Kvs {
-		addr := string(kv.Value)
+		addr := normalizeAddr(string(kv.Value))
+		if addr == "" {
+			continue
+		}
 		backends = append(backends, addr)
 		log.Infof("Discovered existing %s endpoint: %s", serviceName, addr)
 	}
@@ -48,7 +62,7 @@ func WatchService(ctx context.Context, client *clientv3.Client, serviceName stri
 				seen := make(map[string]struct{})
 
 				for _, kv := range current.Kvs {
-					addr := strings.TrimSpace(string(kv.Value))
+					addr := normalizeAddr(string(kv.Value))
 					if addr == "" {
 						continue
 					}

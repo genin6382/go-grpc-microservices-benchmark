@@ -50,13 +50,23 @@ func NewReverseProxy(target string) *httputil.ReverseProxy {
 
 func ProxyHandler(lb loadbalancer.LoadBalancer, service string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		target, err := lb.NextBackend(service, r)
+		backend, err := lb.NextBackend(service, r)
 		if err != nil {
 			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 			return
 		}
 
-		proxy := NewReverseProxy(target)
+		if lc, ok := lb.(interface {
+			Done(string, string)
+			CurrentCount(string, string) int
+		}); ok {
+			log.Infof("Forwarding %s request to %s (active requests: %d)", service, backend, lc.CurrentCount(service, backend))
+			defer lc.Done(service, backend)
+		} else {
+			log.Infof("Forwarding %s request to %s", service, backend)
+		}
+
+		proxy := NewReverseProxy(backend)
 		proxy.ServeHTTP(w, r)
 	})
 }

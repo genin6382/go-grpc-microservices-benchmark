@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -31,8 +32,12 @@ func main() {
 	switch *lbStrategy {
 	case "round_robin":
 		lb = loadbalancer.NewRoundRobin()
+	case "least_conn":
+		lb = loadbalancer.NewLeastConnections()
+	case "consistent_hash":
+		lb = loadbalancer.NewConsistentHash(150)
 	default:
-		log.Fatalf("Invalid load balancing strategy: %s", *lbStrategy)
+		log.Fatalf("invalid load balancing strategy: %s", *lbStrategy)
 	}
 
 	registry, err := gatewayetcd.NewServiceRegistry([]string{cfg.EtcdAddr})
@@ -80,6 +85,23 @@ func main() {
 		r.Handle("/orders/*", gateway.WithIdentity(gateway.ProxyHandler(lb, "order")))
 	})
 
-	log.Printf("Gateway running on :8000 with load balancer: %s", *lbStrategy)
-	log.Fatal(http.ListenAndServe(":8000", r))
+	srv := &http.Server{
+		Addr:    ":8000",
+		Handler: r,
+	}
+
+	go func() {
+		log.Printf("Gateway running on :8000 with load balancer: %s", *lbStrategy)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("gateway server error: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Println("Shutting down gateway...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = srv.Shutdown(shutdownCtx)
+	log.Println("Gateway stopped")
 }

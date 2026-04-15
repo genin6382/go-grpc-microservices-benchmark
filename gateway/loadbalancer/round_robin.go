@@ -50,3 +50,9 @@ func (rr *RoundRobin) NextBackend(service string, r *http.Request) (string, erro
 	backend := backends[(idx-1)%uint64(len(backends))]
 	return backend, nil
 }
+
+func (rr *RoundRobin) CurrentCount(service, backend string) int {
+	return 0
+}
+
+func (rr *RoundRobin) Done(service, backend string) {}
