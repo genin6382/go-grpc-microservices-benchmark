@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Benchmark Dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #f6f8fb; color: #222; }
+    h1 { margin-bottom: 12px; }
+    .card { background: white; border-radius: 12px; padding: 16px; box-shadow: 0 4px 18px rgba(0,0,0,.08); margin-bottom: 20px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #eee; text-align: left; }
+    th { background: #eef2f7; }
+  </style>
+</head>
+<body>
+  <h1>Load Balancer Benchmark Dashboard</h1>
+
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th>Strategy</th>
+          <th>Pattern</th>
+          <th>Requests</th>
+          <th>Success %</th>
+          <th>Avg ms</th>
+          <th>p50 ms</th>
+          <th>p95 ms</th>
+          <th>p99 ms</th>
+          <th>Errors</th>
+        </tr>
+      </thead>
+      <tbody>
+        
+        <tr>
+          <td>round_robin</td>
+          <td>uniform</td>
+          <td>1000</td>
+          <td>100.00</td>
+          <td>11.67</td>
+          <td>0.00</td>
+          <td>48.00</td>
+          <td>61.00</td>
+          <td>0</td>
+        </tr>
+        
+      </tbody>
+    </table>
+  </div>
+
+  <div class="grid">
+    <div class="card"><div id="p95"></div></div>
+    <div class="card"><div id="success"></div></div>
+    <div class="card"><div id="avg"></div></div>
+  </div>
+
+<script>
+  const data = [{"strategy":"round_robin","pattern":"uniform","requests":1000,"success_rate":100,"avg_latency_ms":11.67,"p50_latency_ms":0,"p95_latency_ms":48,"p99_latency_ms":61,"error_count":0}];
+  const labels = data.map(d => d.strategy + " | " + d.pattern);
+
+  Plotly.newPlot("p95", [{
+    x: labels,
+    y: data.map(d => d.p95_latency_ms),
+    type: "bar",
+    marker: { color: "#2563eb" }
+  }], { title: "p95 Latency (ms)" });
+
+  Plotly.newPlot("success", [{
+    x: labels,
+    y: data.map(d => d.success_rate),
+    type: "bar",
+    marker: { color: "#16a34a" }
+  }], { title: "Success Rate (%)", yaxis: { range: [0, 100] } });
+
+  Plotly.newPlot("avg", [{
+    x: labels,
+    y: data.map(d => d.avg_latency_ms),
+    type: "bar",
+    marker: { color: "#ea580c" }
+  }], { title: "Average Latency (ms)" });
+</script>
+</body>
+</html>
