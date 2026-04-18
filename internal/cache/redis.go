@@ -24,6 +24,5 @@ func SetupRedisCache(address string) *redis.Client {
 		return nil
 	}
 	
-	log.Info("INFO: Connected to Redis successfully!")
 	return rdb
 }

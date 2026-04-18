@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/genin6382/go-grpc-microservices-benchmark/internal/config"
+	internalmiddleware "github.com/genin6382/go-grpc-microservices-benchmark/internal/middleware"
 	"github.com/go-chi/chi/v5"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
@@ -77,14 +78,12 @@ func (h *OrderHandler) HandleGetOrderByID(w http.ResponseWriter, r *http.Request
 
 func (h *OrderHandler) HandleGetOrdersByUserID(w http.ResponseWriter, r *http.Request) {
 	// Extract user_id from context (set by VerifyToken middleware)
-	userID, ok := r.Context().Value("user_id").(string)
+	userID, ok := r.Context().Value(internalmiddleware.UserIDKey).(string)
 	if !ok || userID == "" {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	// Check cache first
 	
-
 	orders, err := ListOrdersByUserID(h.DB, r.Context(), userID)
 	if err != nil {
 		log.Errorf("Failed to fetch orders for user %s: %v", userID, err)
